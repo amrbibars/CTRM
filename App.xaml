@@ -1,0 +1,33 @@
+﻿<Application x:Class="CTRM.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:CTRM"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+
+        <!-- Background used by all windows -->
+        <LinearGradientBrush x:Key="AppWindowBackground" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#D6FFEA" Offset="0.0" />
+            <GradientStop Color="#FAFFFC" Offset="0.5" />
+            <GradientStop Color="#D6FFEA" Offset="1.0" />
+        </LinearGradientBrush>
+
+        <!-- Default style for every Window -->
+        <Style TargetType="Window">
+            <Setter Property="Background" Value ="{StaticResource AppWindowBackground}"/>
+            <Setter Property="ResizeMode" Value="CanResize"/>
+        </Style>
+
+        <!-- Buttons style -->
+        <Style x:Key="ButtonBaseStyle" TargetType="Button">
+            <Setter Property="Background" Value="#00E784"/>
+            <Setter Property="Foreground" Value="#00493E"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="FontFamily" Value="Arial"/>
+            
+        </Style>
+
+
+
+    </Application.Resources>
+</Application>
