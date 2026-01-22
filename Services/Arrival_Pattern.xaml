@@ -1,20 +1,75 @@
 ﻿<Window x:Class="CTRM.Arrival_Pattern"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:CTRM"
-        mc:Ignorable="d"
-        Title="Arrival_Pattern" Height="450" Width="800"
+        Title="Arrival Pattern Analysis" Height="650" Width="1000"
         Background="{StaticResource AppWindowBackground}">
-    <Grid Margin="10">
-        <Button Content="Load Historical Data (4 to 12 weeks)" 
-                Style="{StaticResource ButtonBaseStyle}" 
-                HorizontalAlignment="Left" 
-                VerticalAlignment="Top"
-                Padding="15,5"
-                Margin="0,0,20,0"
-                Click="LoadData_Click"/>
 
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="450"/>
+            <ColumnDefinition Width="20"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="250"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                <Button Content="📂 Load Historical Data" Style="{StaticResource ButtonBaseStyle}" 
+                        HorizontalAlignment="Left" Padding="10,5" Margin="0,0,0,15" Click="LoadData_Click"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Skill(s) Set" FontWeight="SemiBold" FontSize="10"/>
+                        <ComboBox x:Name="cmbTeams" Height="25" SelectionChanged="OnFilterChanged"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="View Selection" FontWeight="SemiBold" FontSize="10"/>
+                        <ComboBox x:Name="cmbView" Height="25" SelectionChanged="OnFilterChanged">
+                            <ComboBoxItem Content="Weekly Total"/>
+                            <ComboBoxItem Content="Sunday"/>
+                            <ComboBoxItem Content="Monday"/>
+                            <ComboBoxItem Content="Tuesday"/>
+                            <ComboBoxItem Content="Wednesday"/>
+                            <ComboBoxItem Content="Thursday"/>
+                            <ComboBoxItem Content="Friday"/>
+                            <ComboBoxItem Content="Saturday"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+
+            <DataGrid x:Name="gridHistory" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" Background="White">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Week" Binding="{Binding WeekLabel}" Width="50"/>
+                    <DataGridTextColumn Header="Sun" Binding="{Binding Sun}" Width="*"/>
+                    <DataGridTextColumn Header="Mon" Binding="{Binding Mon}" Width="*"/>
+                    <DataGridTextColumn Header="Tue" Binding="{Binding Tue}" Width="*"/>
+                    <DataGridTextColumn Header="Wed" Binding="{Binding Wed}" Width="*"/>
+                    <DataGridTextColumn Header="Thu" Binding="{Binding Thu}" Width="*"/>
+                    <DataGridTextColumn Header="Fri" Binding="{Binding Fri}" Width="*"/>
+                    <DataGridTextColumn Header="Sat" Binding="{Binding Sat}" Width="*"/>
+                    <DataGridTextColumn Header="Total" Binding="{Binding WeekTotal}" Width="60" FontWeight="Bold"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <Border Grid.Row="2" Margin="0,10,0,0" BorderBrush="LightGray" BorderThickness="1" Background="White">
+                <Grid x:Name="chartContainer">
+                    <TextBlock x:Name="lblChartTitle" Text="Trend" FontSize="10" Margin="5" Foreground="Gray"/>
+                    <Canvas x:Name="chartCanvas" Margin="30,20,10,20" SizeChanged="OnChartSizeChanged"/>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

@@ -1,29 +1,50 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
-using Microsoft.Win32; // For OpenFileDialog
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace CTRM
 {
     // ---------------------------------------------------------
-    // 1. DATA STRUCTURE (Lightweight)
+    // 1. DATA STRUCTURE
     // ---------------------------------------------------------
     public struct IBV_CallData
     {
         public DateTime Date;
-        public TimeSpan StartTime; // e.g., 06:30
-        public string Team;        // RESOURCE_NAME
-        public int Offered;        // Calls Volume
-        public int Aht;            // Handle Time
-        public int WeekNumber;     // Custom Fiscal Week
-        public int Year;           // Custom Fiscal Year
+        public TimeSpan StartTime;
+        public string Team;
+        public int Offered;
+        public int Aht;
+        public int WeekNumber;
+        public int Year;
+    }
+
+    public class WeeklyPivotRow
+    {
+        public string WeekLabel { get; set; } = string.Empty;
+        public int Year { get; set; }
+        public int WeekNumber { get; set; }
+
+        public int Sun { get; set; }
+        public int Mon { get; set; }
+        public int Tue { get; set; }
+        public int Wed { get; set; }
+        public int Thu { get; set; }
+        public int Fri { get; set; }
+        public int Sat { get; set; }
+        
+
+        public int WeekTotal => Sun + Mon + Tue + Wed + Thu + Fri + Sat;
     }
 
     // ---------------------------------------------------------
-    // 2. LOGIC ENGINE (Specific to IBV CSV/Excel Format)
+    // 2. LOGIC ENGINE
     // ---------------------------------------------------------
     public class IBV_Historical_Loader
     {
@@ -36,10 +57,10 @@ namespace CTRM
                 string? headerLine = reader.ReadLine();
                 if (string.IsNullOrEmpty(headerLine)) return results;
 
-                // Normalize headers to Upper Case for safe matching
+                // Sanitize header for Excel Filters and Quotes
+                headerLine = headerLine.Replace("\uFEFF", "").Replace("\"", "").Trim();
                 var headers = headerLine.Split(',').Select(h => h.Trim().ToUpper()).ToList();
 
-                // Dynamic Column Mapping
                 int idxDate = headers.IndexOf("LABEL_YYYY_MM_DD");
                 int idxInterval = headers.IndexOf("LABEL_YYYY_MM_DD_HH24_30INT");
                 int idxOffered = headers.IndexOf("OFFERED");
@@ -48,9 +69,11 @@ namespace CTRM
                 int idxType = headers.IndexOf("INTERACTION_TYPE");
                 int idxAht = headers.IndexOf("AHT");
 
-                // Basic Validation
                 if (idxDate == -1 || idxInterval == -1 || idxOffered == -1)
-                    throw new Exception("Missing standard columns (Date, Interval, or Offered).");
+                {
+                    string found = string.Join(" | ", headers);
+                    throw new Exception($"Column Mismatch!\n\nExpected: LABEL_YYYY_MM_DD, OFFERED, etc.\n\nFound in file: {found}");
+                }
 
                 while (!reader.EndOfStream)
                 {
@@ -59,28 +82,27 @@ namespace CTRM
 
                     var columns = line.Split(',');
 
-                    // Strict Filtering: Voice & Inbound Only
-                    if (idxMedia != -1 && columns[idxMedia].Trim() != "Voice") continue;
-                    if (idxType != -1 && columns[idxType].Trim() != "Inbound") continue;
+                    if (idxMedia != -1 && idxMedia < columns.Length && columns[idxMedia].Trim() != "Voice") continue;
+                    if (idxType != -1 && idxType < columns.Length && columns[idxType].Trim() != "Inbound") continue;
 
                     try
                     {
-                        // 1. Parse Date
-                        if (!DateTime.TryParseExact(columns[idxDate],
+                        if (!DateTime.TryParseExact(columns[idxDate].Trim().Replace("\"", ""),
                             new[] { "M/d/yyyy", "MM/dd/yyyy", "M/dd/yyyy", "MM/d/yyyy" },
                             CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime date))
                             continue;
 
-                        // 2. Parse Interval (Get "06:30" from "2025-12-15 06:30-07:00")
-                        string timePart = columns[idxInterval].Split(' ')[1];
+                        string rawInterval = columns[idxInterval];
+                        if (!rawInterval.Contains(" ")) continue;
+
+                        string timePart = rawInterval.Split(' ')[1];
                         TimeSpan startTime = TimeSpan.Parse(timePart.Split('-')[0]);
 
-                        // 3. Parse Numbers
-                        int offered = int.Parse(columns[idxOffered]);
-                        int aht = (idxAht != -1) ? int.Parse(columns[idxAht]) : 0;
-                        string team = columns[idxTeam];
+                        // Use double parse for safety with Excel formats
+                        int offered = (int)double.Parse(columns[idxOffered]);
+                        int aht = (idxAht != -1 && idxAht < columns.Length) ? (int)double.Parse(columns[idxAht]) : 0;
+                        string team = (idxTeam != -1 && idxTeam < columns.Length) ? columns[idxTeam].Trim() : "Unknown";
 
-                        // 4. Calculate Fiscal Week (Sunday Start)
                         var weekInfo = GetFiscalWeek(date);
 
                         results.Add(new IBV_CallData
@@ -94,35 +116,22 @@ namespace CTRM
                             WeekNumber = weekInfo.Week
                         });
                     }
-                    catch
-                    {
-                        // Skip bad rows silently
-                        continue;
-                    }
+                    catch { continue; }
                 }
             }
             return results;
         }
 
-        // Logic: Sunday Start. If week has Jan days, it's Week 1. No Week 53.
         private (int Year, int Week) GetFiscalWeek(DateTime date)
         {
-            DateTime startOfWeek = date.AddDays(-(int)date.DayOfWeek); // Sunday
-            DateTime endOfWeek = startOfWeek.AddDays(6);               // Saturday
-
+            DateTime startOfWeek = date.AddDays(-(int)date.DayOfWeek);
+            DateTime endOfWeek = startOfWeek.AddDays(6);
             int fiscalYear = startOfWeek.Year;
 
-            // "January Rule": If the week bridges years, it belongs to the new year (Week 1)
-            if (endOfWeek.Year > startOfWeek.Year)
-            {
-                return (endOfWeek.Year, 1);
-            }
+            if (endOfWeek.Year > startOfWeek.Year) return (endOfWeek.Year, 1);
 
-            // Calculate Week Number from the first Sunday of the year
             DateTime jan1 = new DateTime(fiscalYear, 1, 1);
-            // Adjust Jan 1 to find the Sunday that started its week
             DateTime week1Start = jan1.AddDays(-(int)jan1.DayOfWeek);
-
             int daysDiff = (startOfWeek - week1Start).Days;
             int weekNum = (daysDiff / 7) + 1;
 
@@ -130,105 +139,162 @@ namespace CTRM
         }
     }
 
-
     // ---------------------------------------------------------
-    // 3. ANALYZER ENGINE (Calculates the Pattern)
-    // ---------------------------------------------------------
-    public class IBV_Analyzer
-    {
-        // Structure for the final "Average" result
-        public struct IntervalResult
-        {
-            public DayOfWeek Day;
-            public TimeSpan Time;
-            public double AvgOffered;
-            public double AvgAHT;
-        }
-
-        public List<IntervalResult> CalculateAveragePattern(List<IBV_CallData> rawData)
-        {
-            var results = new List<IntervalResult>();
-
-            // 1. Group by Day of Week and Time Interval
-            //    Key = "Monday-08:30", Value = List of rows
-            var groupedData = rawData
-                .GroupBy(x => new { x.Date.DayOfWeek, x.StartTime })
-                .OrderBy(g => g.Key.DayOfWeek)
-                .ThenBy(g => g.Key.StartTime);
-
-            foreach (var group in groupedData)
-            {
-                // 2. Count distinct weeks for this specific interval
-                //    (Crucial: If one Monday was a holiday and missing, don't divide by total weeks)
-                int weeksCount = group.Select(x => x.WeekNumber).Distinct().Count();
-
-                if (weeksCount == 0) continue;
-
-                // 3. Calculate Averages
-                double totalOffered = group.Sum(x => x.Offered);
-
-                // Weighted AHT Formula: Sum(Offered * AHT) / TotalOffered
-                // This prevents short calls from skewing the average
-                double totalWorkload = group.Sum(x => x.Offered * x.Aht);
-                double weightedAHT = (totalOffered > 0) ? (totalWorkload / totalOffered) : 0;
-
-                results.Add(new IntervalResult
-                {
-                    Day = group.Key.DayOfWeek,
-                    Time = group.Key.StartTime,
-                    AvgOffered = totalOffered / weeksCount, // Simple Average
-                    AvgAHT = weightedAHT
-                });
-            }
-
-            return results;
-        }
-    }
-
-    // ---------------------------------------------------------
-    // 4. MAIN WINDOW LOGIC
+    // 3. MAIN WINDOW LOGIC
     // ---------------------------------------------------------
     public partial class Arrival_Pattern : Window
     {
-        // Store loaded data in memory for calculations
-        private List<IBV_CallData> _loadedData;
+        private List<IBV_CallData> _allData;
+        private List<IBV_CallData> _filteredData;
+        private bool _isDataLoading = false;
 
         public Arrival_Pattern()
         {
             InitializeComponent();
-            _loadedData = new List<IBV_CallData>();
+            _allData = new List<IBV_CallData>();
+            _filteredData = new List<IBV_CallData>();
         }
 
         private void LoadData_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "IB Voice Reports|*.csv;*.xlsx;*.xls";
-            openFileDialog.Title = "Select Inbound Voice Data (4-12 Weeks)";
 
             if (openFileDialog.ShowDialog() == true)
             {
                 try
                 {
-                    // Call the internal class
                     var loader = new IBV_Historical_Loader();
-                    _loadedData = loader.Load(openFileDialog.FileName);
+                    _allData = loader.Load(openFileDialog.FileName);
 
-                    if (_loadedData.Count > 0)
+                    if (_allData.Count > 0)
                     {
-                        MessageBox.Show($"Data Loaded Successfully!\nRows: {_loadedData.Count}\n" +
-                                        $"Date Range: {_loadedData.Min(x => x.Date):d} to {_loadedData.Max(x => x.Date):d}",
-                                        "Import Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                        _isDataLoading = true;
+
+                        // Populate Team Dropdown with "All" option
+                        var teams = _allData.Select(x => x.Team).Distinct().OrderBy(t => t).ToList();
+                        teams.Insert(0, "All");
+                        cmbTeams.ItemsSource = teams;
+
+                        if (teams.Count > 0) cmbTeams.SelectedIndex = 0;
+
+                        _isDataLoading = false;
+                        RefreshDashboard();
                     }
                     else
                     {
-                        MessageBox.Show("No 'Voice' / 'Inbound' data found in file.", "Empty Load", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show("No valid Voice/Inbound data found.", "Load Error");
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error processing file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    _isDataLoading = false;
+                    MessageBox.Show("Error: " + ex.Message);
                 }
             }
+        }
+
+        private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isDataLoading) return;
+            RefreshDashboard();
+        }
+
+        private void RefreshDashboard()
+        {
+            if (_allData == null || _allData.Count == 0 || cmbTeams.SelectedItem == null) return;
+
+            string? selectedTeam = cmbTeams.SelectedItem.ToString();
+
+            if (selectedTeam == "All")
+                _filteredData = _allData;
+            else
+                _filteredData = _allData.Where(x => x.Team == selectedTeam).ToList();
+
+            var pivotRows = _filteredData
+                .GroupBy(x => new { x.Year, x.WeekNumber })
+                .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.WeekNumber)
+                .Select(g => new WeeklyPivotRow
+                {
+                    WeekLabel = $"W{g.Key.WeekNumber}",
+                    Year = g.Key.Year,
+                    WeekNumber = g.Key.WeekNumber,
+                    Sun = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Sunday).Sum(x => x.Offered),
+                    Mon = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Monday).Sum(x => x.Offered),
+                    Tue = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Tuesday).Sum(x => x.Offered),
+                    Wed = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Wednesday).Sum(x => x.Offered),
+                    Thu = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Thursday).Sum(x => x.Offered),
+                    Fri = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Friday).Sum(x => x.Offered),
+                    Sat = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Saturday).Sum(x => x.Offered),
+                    
+                }).ToList();
+
+            gridHistory.ItemsSource = pivotRows;
+            DrawChart(pivotRows);
+        }
+
+        private void OnChartSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (gridHistory.ItemsSource is List<WeeklyPivotRow> data)
+            {
+                DrawChart(data);
+            }
+        }
+
+        private void DrawChart(List<WeeklyPivotRow> data)
+        {
+            chartCanvas.Children.Clear();
+            if (data == null || data.Count == 0) return;
+
+            double w = chartCanvas.ActualWidth;
+            double h = chartCanvas.ActualHeight;
+            if (w < 10 || h < 10) return;
+
+            string viewMode = (cmbView.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "All Days (Trend)";
+            List<double> vals = new List<double>();
+
+            if (viewMode == "All Days (Trend)")
+            {
+                foreach (var r in data) { vals.AddRange(new double[] { r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat, r.Sun }); }
+            }
+            else if (viewMode == "Weekly Total")
+            {
+                vals = data.Select(x => (double)x.WeekTotal).ToList();
+            }
+            else
+            {
+                if (Enum.TryParse(viewMode, out DayOfWeek target))
+                {
+                    vals = data.Select(r => target switch
+                    {
+                        DayOfWeek.Monday => (double)r.Sun,
+                        DayOfWeek.Tuesday => (double)r.Mon,
+                        DayOfWeek.Wednesday => (double)r.Tue,
+                        DayOfWeek.Thursday => (double)r.Wed,
+                        DayOfWeek.Friday => (double)r.Thu,
+                        DayOfWeek.Saturday => (double)r.Fri,
+                        _ => (double)r.Sat
+                    }).ToList();
+                }
+            }
+
+            if (vals.Count < 2) return;
+            double max = vals.Max(); if (max == 0) max = 1;
+
+            Polyline line = new Polyline { Stroke = Brushes.DodgerBlue, StrokeThickness = 2 };
+            double stepX = w / (vals.Count - 1);
+
+            for (int i = 0; i < vals.Count; i++)
+            {
+                double x = i * stepX;
+                double y = h - (vals[i] / max * h);
+                line.Points.Add(new Point(x, y));
+
+                Ellipse dot = new Ellipse { Fill = Brushes.White, Stroke = Brushes.DodgerBlue, StrokeThickness = 1, Width = 6, Height = 6 };
+                Canvas.SetLeft(dot, x - 3); Canvas.SetTop(dot, y - 3);
+                chartCanvas.Children.Add(dot);
+            }
+            chartCanvas.Children.Add(line);
         }
     }
 }
