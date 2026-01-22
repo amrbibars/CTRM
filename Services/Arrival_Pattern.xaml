@@ -7,7 +7,14 @@
         mc:Ignorable="d"
         Title="Arrival_Pattern" Height="450" Width="800"
         Background="{StaticResource AppWindowBackground}">
-    <Grid>
-        
+    <Grid Margin="10">
+        <Button Content="Load Historical Data (4 to 12 weeks)" 
+                Style="{StaticResource ButtonBaseStyle}" 
+                HorizontalAlignment="Left" 
+                VerticalAlignment="Top"
+                Padding="15,5"
+                Margin="0,0,20,0"
+                Click="LoadData_Click"/>
+
     </Grid>
 </Window>
