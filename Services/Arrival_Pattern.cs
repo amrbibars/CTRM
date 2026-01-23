@@ -158,7 +158,10 @@ namespace CTRM
         private void LoadData_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "IB Voice Reports|*.csv;*.xlsx;*.xls";
+
+            // RESTRICTION: Only show CSV files
+            openFileDialog.Filter = "CSV Files (*.csv)|*.csv";
+            openFileDialog.Title = "Select Historical Data (CSV Only)";
 
             if (openFileDialog.ShowDialog() == true)
             {
@@ -171,25 +174,30 @@ namespace CTRM
                     {
                         _isDataLoading = true;
 
-                        // Populate Team Dropdown with "All" option
+                        // Populate ListBox with "All" + Teams
                         var teams = _allData.Select(x => x.Team).Distinct().OrderBy(t => t).ToList();
                         teams.Insert(0, "All");
-                        cmbTeams.ItemsSource = teams;
+                        lstTeams.ItemsSource = teams;
 
-                        if (teams.Count > 0) cmbTeams.SelectedIndex = 0;
+                        // Default Selection: "All"
+                        if (teams.Count > 0)
+                        {
+                            lstTeams.SelectedIndex = 0;
+                            btnSkillSelect.Content = "All Skills Selected";
+                        }
 
                         _isDataLoading = false;
                         RefreshDashboard();
                     }
                     else
                     {
-                        MessageBox.Show("No valid Voice/Inbound data found.", "Load Error");
+                        MessageBox.Show("No valid Voice/Inbound data found in this CSV.", "Load Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 }
                 catch (Exception ex)
                 {
                     _isDataLoading = false;
-                    MessageBox.Show("Error: " + ex.Message);
+                    MessageBox.Show("Error reading CSV: " + ex.Message, "File Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -197,20 +205,38 @@ namespace CTRM
         private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_isDataLoading) return;
+
+            // Update the ToggleButton text to show user what is happening
+            if (sender == lstTeams)
+            {
+                var selectedCount = lstTeams.SelectedItems.Count;
+                if (selectedCount == 1)
+                    btnSkillSelect.Content = lstTeams.SelectedItem.ToString();
+                else
+                    btnSkillSelect.Content = $"{selectedCount} Skills Selected";
+            }
+
             RefreshDashboard();
         }
 
         private void RefreshDashboard()
         {
-            if (_allData == null || _allData.Count == 0 || cmbTeams.SelectedItem == null) return;
+            // Safety Check: Ensure data is loaded
+            if (_allData == null || _allData.Count == 0) return;
 
-            string? selectedTeam = cmbTeams.SelectedItem.ToString();
+            // Get selected items from ListBox
+            var selectedItems = lstTeams.SelectedItems.Cast<string>().ToList();
+            if (selectedItems.Count == 0) return; // Nothing selected
 
-            if (selectedTeam == "All")
+            // FILTER LOGIC:
+            // If "All" is selected, OR if the list is empty, show everything.
+            // Otherwise, filter where the Team is in the selected list.
+            if (selectedItems.Contains("All"))
                 _filteredData = _allData;
             else
-                _filteredData = _allData.Where(x => x.Team == selectedTeam).ToList();
+                _filteredData = _allData.Where(x => selectedItems.Contains(x.Team)).ToList();
 
+            
             var pivotRows = _filteredData
                 .GroupBy(x => new { x.Year, x.WeekNumber })
                 .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.WeekNumber)
@@ -226,7 +252,6 @@ namespace CTRM
                     Thu = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Thursday).Sum(x => x.Offered),
                     Fri = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Friday).Sum(x => x.Offered),
                     Sat = g.Where(x => x.Date.DayOfWeek == DayOfWeek.Saturday).Sum(x => x.Offered),
-                    
                 }).ToList();
 
             gridHistory.ItemsSource = pivotRows;
@@ -250,12 +275,16 @@ namespace CTRM
             double h = chartCanvas.ActualHeight;
             if (w < 10 || h < 10) return;
 
-            string viewMode = (cmbView.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "All Days (Trend)";
+            string viewMode = (cmbView.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Weekly Total";
             List<double> vals = new List<double>();
 
             if (viewMode == "All Days (Trend)")
             {
-                foreach (var r in data) { vals.AddRange(new double[] { r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat, r.Sun }); }
+                foreach (var r in data)
+                {
+                    // FIX: Changed order to start with Sunday and end with Saturday
+                    vals.AddRange(new double[] { r.Sun, r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat });
+                }
             }
             else if (viewMode == "Weekly Total")
             {
@@ -267,13 +296,13 @@ namespace CTRM
                 {
                     vals = data.Select(r => target switch
                     {
-                        DayOfWeek.Monday => (double)r.Sun,
-                        DayOfWeek.Tuesday => (double)r.Mon,
-                        DayOfWeek.Wednesday => (double)r.Tue,
-                        DayOfWeek.Thursday => (double)r.Wed,
-                        DayOfWeek.Friday => (double)r.Thu,
-                        DayOfWeek.Saturday => (double)r.Fri,
-                        _ => (double)r.Sat
+                        DayOfWeek.Monday => (double)r.Mon,
+                        DayOfWeek.Tuesday => (double)r.Tue,
+                        DayOfWeek.Wednesday => (double)r.Wed,
+                        DayOfWeek.Thursday => (double)r.Thu,
+                        DayOfWeek.Friday => (double)r.Fri,
+                        DayOfWeek.Saturday => (double)r.Sat,
+                        _ => (double)r.Sun
                     }).ToList();
                 }
             }

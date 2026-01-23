@@ -10,7 +10,6 @@
             <ColumnDefinition Width="20"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-
         <Grid Grid.Column="0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -30,14 +29,25 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Skill(s) Set" FontWeight="SemiBold" FontSize="10"/>
-                        <ComboBox x:Name="cmbTeams" Height="25" SelectionChanged="OnFilterChanged"/>
+                        <TextBlock Text="Skill(s) Set (Shift/Ctrl to Select)" FontWeight="SemiBold" FontSize="10"/>
+
+                        <ToggleButton x:Name="btnSkillSelect" Content="Select Skills" Height="25" 
+                                      HorizontalContentAlignment="Left" Padding="5,0"/>
+
+                        <Popup IsOpen="{Binding IsChecked, ElementName=btnSkillSelect}" StaysOpen="False" PlacementTarget="{Binding ElementName=btnSkillSelect}" MinWidth="200">
+                            <Border Background="White" BorderBrush="Gray" BorderThickness="1">
+                                <ListBox x:Name="lstTeams" SelectionMode="Extended" MaxHeight="200" 
+                                         SelectionChanged="OnFilterChanged" 
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                            </Border>
+                        </Popup>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="View Selection" FontWeight="SemiBold" FontSize="10"/>
                         <ComboBox x:Name="cmbView" Height="25" SelectionChanged="OnFilterChanged">
-                            <ComboBoxItem Content="Weekly Total"/>
+                            <ComboBoxItem Content="Weekly Total" IsSelected="True"/>
+                            <ComboBoxItem Content="All Days (Trend)"/>
                             <ComboBoxItem Content="Sunday"/>
                             <ComboBoxItem Content="Monday"/>
                             <ComboBoxItem Content="Tuesday"/>
