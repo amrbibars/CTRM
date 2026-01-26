@@ -29,7 +29,7 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Skill(s) Set (Shift/Ctrl to Select)" FontWeight="SemiBold" FontSize="10"/>
+                        <TextBlock Text="Skill(s) Set" FontWeight="SemiBold" FontSize="10"/>
 
                         <ToggleButton x:Name="btnSkillSelect" Content="Select Skills" Height="25" 
                                       HorizontalContentAlignment="Left" Padding="5,0"/>
@@ -37,14 +37,14 @@
                         <Popup IsOpen="{Binding IsChecked, ElementName=btnSkillSelect}" StaysOpen="False" PlacementTarget="{Binding ElementName=btnSkillSelect}" MinWidth="200">
                             <Border Background="White" BorderBrush="Gray" BorderThickness="1">
                                 <ListBox x:Name="lstTeams" SelectionMode="Extended" MaxHeight="200" 
-                                         SelectionChanged="OnFilterChanged" 
+                                         SelectionChanged="OnFilterChanged"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto"/>
                             </Border>
                         </Popup>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="View Selection" FontWeight="SemiBold" FontSize="10"/>
+                        <TextBlock Text="Trend Line" FontWeight="SemiBold" FontSize="10"/>
                         <ComboBox x:Name="cmbView" Height="25" SelectionChanged="OnFilterChanged">
                             <ComboBoxItem Content="Weekly Total" IsSelected="True"/>
                             <ComboBoxItem Content="All Days (Trend)"/>
@@ -80,6 +80,168 @@
                     <Canvas x:Name="chartCanvas" Margin="30,20,10,20" SizeChanged="OnChartSizeChanged"/>
                 </Grid>
             </Border>
+        </Grid>
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" BorderThickness="1" Padding="10" Margin="0,0,0,10" CornerRadius="4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="Focus on Week(s)" FontWeight="SemiBold" FontSize="10"/>
+                        <ToggleButton x:Name="btnWeekSelect" Content="Select Weeks" Height="25" MinWidth="150"
+                                      HorizontalContentAlignment="Left" Padding="5,0"/>
+                        <Popup IsOpen="{Binding IsChecked, ElementName=btnWeekSelect}" StaysOpen="False" PlacementTarget="{Binding ElementName=btnWeekSelect}" MinWidth="150">
+                            <Border Background="White" BorderBrush="Gray" BorderThickness="1">
+                                <ListBox x:Name="lstWeeks" SelectionMode="Extended" MaxHeight="200" 
+                                         SelectionChanged="OnIntervalFilterChanged" 
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock Text="Export to Excel" FontWeight="SemiBold" FontSize="10"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Weeks" Height="25" Width="60" Margin="0,0,5,0" 
+                                    Click="ExportWeeks_Click" ToolTip="Export Weekly Volume Table" Style="{StaticResource ButtonBaseStyle}"/>
+                            <Button Content="Intervals" Height="25" Width="70" 
+                                    Click="ExportIntervals_Click" ToolTip="Export Interval Distribution Table" Style="{StaticResource ButtonBaseStyle}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Bottom">
+                        <RadioButton x:Name="rbVolume" Content="Volumes" GroupName="ViewMode" IsChecked="True" 
+                                     Checked="OnIntervalFilterChanged" VerticalContentAlignment="Center"/>
+                        <RadioButton x:Name="rbPattern" Content="Arrival Pattern" GroupName="ViewMode" 
+                                     Checked="OnIntervalFilterChanged" VerticalContentAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <DataGrid x:Name="gridIntervals" Grid.Row="1" AutoGenerateColumns="False" 
+                      IsReadOnly="True" CanUserAddRows="False"
+                      HeadersVisibility="Column" GridLinesVisibility="None"
+                      BorderThickness="1" BorderBrush="#DDDDDD" Background="White"
+                      HorizontalAlignment="Left" VerticalAlignment="Top">
+                <DataGrid.Resources>
+                    <Style TargetType="DataGridCell">
+                        <Setter Property="TextBlock.TextAlignment" Value="Center"/>
+                        <Setter Property="Padding" Value="5"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="DataGridCell">
+                                    <Border Background="Transparent">
+                                        <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </DataGrid.Resources>
+
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Interval" Binding="{Binding Label}" Width="Auto" FontWeight="Bold">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="IsHitTestVisible" Value="False"/>
+                                <Setter Property="Focusable" Value="False"/>
+                                <Setter Property="Background" Value="#F5F5F5"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridCell">
+                                            <Border Background="{TemplateBinding Background}" 
+                                                    BorderBrush="{TemplateBinding BorderBrush}" 
+                                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                                <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" Margin="5,0"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTemplateColumn Header="Sun" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding SunColor}" Margin="-5">
+                                    <TextBlock Text="{Binding SunDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Mon" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding MonColor}" Margin="-5">
+                                    <TextBlock Text="{Binding MonDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Tue" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding TueColor}" Margin="-5">
+                                    <TextBlock Text="{Binding TueDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Wed" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding WedColor}" Margin="-5">
+                                    <TextBlock Text="{Binding WedDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Thu" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding ThuColor}" Margin="-5">
+                                    <TextBlock Text="{Binding ThuDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Fri" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding FriColor}" Margin="-5">
+                                    <TextBlock Text="{Binding FriDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Sat" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding SatColor}" Margin="-5">
+                                    <TextBlock Text="{Binding SatDisplay}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8,0"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
         </Grid>
     </Grid>
 </Window>
