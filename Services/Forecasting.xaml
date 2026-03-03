@@ -6,7 +6,35 @@
         xmlns:local="clr-namespace:CTRM.Services"
         mc:Ignorable="d"
         Title="Forecasting" Height="450" Width="800">
-    <Grid>
-        
+
+    <Window.Resources>
+        <Style TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}"/>
+    </Window.Resources>
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Forecasting &amp; Resource Planning" FontSize="24" FontWeight="Bold" Foreground="#2C3E50"/>
+                <TextBlock x:Name="txtDataStatus" Text="Status: Waiting for data..." Foreground="#7F8C8D" FontStyle="Italic" Margin="0,5,0,0"/>
+            </StackPanel>
+
+            <Button x:Name="btnLoadData" Grid.Column="1" Content="📂 Load / Replace Data" 
+                    Height="35" Padding="15,0" 
+                    BorderThickness="0" Cursor="Hand" Click="btnLoadData_Click"/>
+        </Grid>
+
+        <Separator Grid.Row="0" VerticalAlignment="Bottom" Height="2" Background="#BDC3C7" Margin="0,0,0,-10"/>
+
     </Grid>
 </Window>
