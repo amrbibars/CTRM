@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Windows;
 using Microsoft.Win32;
-using CTRM.DB; // Assuming this is where DataManager is located
-// using CTRM.Loaders; // Add the namespace where IBV_Historical_Loader lives
+using CTRM.DB;
+// using CTRM.Loaders; // Uncomment if IBV_Historical_Loader is in a different namespace
 
 namespace CTRM.Services
 {
@@ -17,10 +15,9 @@ namespace CTRM.Services
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // Check if data was already loaded from the other window
+            // Check if data was already loaded globally upon opening the window
             UpdateDataStatus();
         }
-
         private void btnLoadData_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog
@@ -33,7 +30,7 @@ namespace CTRM.Services
             {
                 try
                 {
-                    // Assuming IBV_Historical_Loader is accessible here
+                    // Assuming IBV_Historical_Loader is accessible in your project
                     var loader = new IBV_Historical_Loader();
                     var loadedData = loader.Load(openFileDialog.FileName);
 
@@ -59,7 +56,6 @@ namespace CTRM.Services
                 }
             }
         }
-
         private void UpdateDataStatus()
         {
             if (DataManager.Instance.HasData)
@@ -67,25 +63,12 @@ namespace CTRM.Services
                 int recordCount = DataManager.Instance.AllData.Count;
                 txtDataStatus.Text = $"Status: Data Loaded ({recordCount:N0} records active)";
                 txtDataStatus.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#27AE60"));
-
-                // Optional: You could automatically set the DatePickers here based on the Min/Max dates in DataManager.Instance.AllData
             }
             else
             {
                 txtDataStatus.Text = "Status: No data loaded. Please upload a file.";
                 txtDataStatus.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#E74C3C"));
             }
-        }
-
-        private void btnCalculate_Click(object sender, RoutedEventArgs e)
-        {
-            if (!DataManager.Instance.HasData)
-            {
-                MessageBox.Show("Please load data before generating a forecast.", "Missing Data", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            // We will hook up the Erlang / Forecasting logic here next!
         }
     }
 }
