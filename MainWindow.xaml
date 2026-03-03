@@ -48,7 +48,7 @@
             <Button Content="Normalize AHT" IsEnabled="False"/>
             <Button Content="Arrival Pattern" Tag="{x:Type local:Arrival_Pattern}" Click="OpenWindow_Click" />
             <Button Content="Budgeting" IsEnabled ="False" Tag="{x:Type local:Budgeting}" Click="OpenWindow_Click" />
-            <Button Content="Forecasting" IsEnabled="False"/>
+            <Button Content="Forecasting" IsEnabled="True"/>
             <Button Content="SLA\ClearBL Simulation" IsEnabled="False"/>
         </StackPanel>
 
