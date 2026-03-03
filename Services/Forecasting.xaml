@@ -5,7 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:CTRM.Services"
         mc:Ignorable="d"
-        Title="Forecasting" Height="600" Width="900"
+        Title="Forecasting &amp; Resource Planning" Height="750" Width="1300"
+        WindowStartupLocation="CenterScreen"
         Background="{StaticResource AppWindowBackground}"
         Loaded="Window_Loaded">
 
@@ -16,29 +17,112 @@
     <Grid Margin="15">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,20">
+        <Grid Grid.Row="0" Margin="0,0,0,15">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0">
-                <TextBlock Text="Forecasting &amp; Resource Planning" FontSize="24" FontWeight="Bold" Foreground="#2C3E50"/>
+                <TextBlock Text="Volume Forecasting Engine" FontSize="26" FontWeight="Bold" Foreground="#2C3E50"/>
                 <TextBlock x:Name="txtDataStatus" Text="Status: Waiting for data..." Foreground="#7F8C8D" FontStyle="Italic" Margin="0,5,0,0"/>
             </StackPanel>
 
             <Button x:Name="btnLoadData" Grid.Column="1" Content="📂 Load / Replace Data" 
-                    Height="35" Padding="15,0" 
+                    Height="35" Padding="15,0" FontWeight="Bold"
                     BorderThickness="0" Cursor="Hand" Click="btnLoadData_Click"/>
         </Grid>
 
-        <Separator Grid.Row="0" VerticalAlignment="Bottom" Height="2" Background="#BDC3C7" Margin="0,0,0,-10"/>
+        <Separator Grid.Row="0" VerticalAlignment="Bottom" Height="2" Background="#BDC3C7" Margin="0,0,0,-5"/>
 
-        
+        <Grid Grid.Row="1" Margin="0,15,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="350"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" CornerRadius="8" Padding="15" BorderThickness="1">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Forecast Parameters" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Lookup Range (Weeks):" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <ComboBox x:Name="cmbLookupRange" Height="28" Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Exclude Weeks (Comma separated, e.g. 12,13):" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBox x:Name="txtExclusions" Height="28" VerticalContentAlignment="Center" Padding="5,0" Margin="0,0,0,15" ToolTip="Leave blank to include all"/>
+
+                        <TextBlock Text="Select Skills:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBox x:Name="txtSkillSearch" Height="28" VerticalContentAlignment="Center" Padding="5,0" Margin="0,0,0,5" 
+                                 Tag="Search skills..." TextChanged="txtSkillSearch_TextChanged"/>
+                        <ListBox x:Name="lstSkills" Height="150" SelectionMode="Extended" Margin="0,0,0,15">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="5,2"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+
+                        <TextBlock Text="Recency Level:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <Grid Margin="0,0,0,5">
+                            <TextBlock Text="Earliest" HorizontalAlignment="Left" FontSize="11" Foreground="#7F8C8D"/>
+                            <TextBlock Text="Default" HorizontalAlignment="Center" FontSize="11" Foreground="#7F8C8D"/>
+                            <TextBlock Text="Recent" HorizontalAlignment="Right" FontSize="11" Foreground="#7F8C8D"/>
+                        </Grid>
+                        <Slider x:Name="sldRecency" Minimum="-5" Maximum="5" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" TickPlacement="BottomRight" Margin="0,0,0,15"/>
+
+                        <CheckBox x:Name="chkIgnoreTrend" Content="Ignore Trend (Weighted Average Only)" FontWeight="SemiBold" Margin="0,0,0,25"/>
+
+                        <Button x:Name="btnCalculate" Content="⚙ Generate Forecast" Height="40" 
+                                FontSize="14" FontWeight="Bold" Cursor="Hand" Click="btnCalculate_Click"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="15"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" CornerRadius="8" Padding="10" BorderThickness="1">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Daily &amp; Weekly Volume Forecast" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <DataGrid x:Name="dgVolumeOutput" AutoGenerateColumns="True" CanUserAddRows="False" IsReadOnly="True" 
+                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"/>
+                    </DockPanel>
+                </Border>
+
+                <Border Grid.Row="2" CornerRadius="8" Padding="10" BorderThickness="1">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Normalized Arrival Pattern" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <DataGrid x:Name="dgPatternOutput" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" 
+                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="DOW" Binding="{Binding DOW}" Width="*"/>
+                                <DataGridTextColumn Header="Average %" Binding="{Binding Average, StringFormat=P2}" Width="*"/>
+                                <DataGridTextColumn Header="Std Dev %" Binding="{Binding StdDev, StringFormat=P2}" Width="*"/>
+                                <DataGridTextColumn Header="Lower Limit %" Binding="{Binding LowerLimit, StringFormat=P2}" Width="*"/>
+                                <DataGridTextColumn Header="Upper Limit %" Binding="{Binding UpperLimit, StringFormat=P2}" Width="*"/>
+                                <DataGridTextColumn Header="Normal Avg %" Binding="{Binding NormalAverage, StringFormat=P2}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Column="4" Margin="0,0,0,0">
+                <Rectangle StrokeThickness="2" StrokeDashArray="4 4" RadiusX="8" RadiusY="8"/>
+                <TextBlock Text="[ Reserved for Stage 2: Interval Distribution ]" HorizontalAlignment="Center" VerticalAlignment="Center" FontStyle="Italic" TextWrapping="Wrap" TextAlignment="Center" Margin="20"/>
+            </Grid>
+        </Grid>
     </Grid>
 </Window>
