@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using ClosedXML.Excel;
+using CTRM.DB; // <-- CRITICAL: Ensure you have this using statement
 
 namespace CTRM
 {
@@ -25,13 +26,12 @@ namespace CTRM
         public int WeekNumber;
         public int Year;
     }
-    // Row for the Left Grid (Weekly Pivot)
+
     public class WeeklyPivotRow
     {
         public string WeekLabel { get; set; } = string.Empty;
         public int Year { get; set; }
         public int WeekNumber { get; set; }
-
         public int Sun { get; set; }
         public int Mon { get; set; }
         public int Tue { get; set; }
@@ -39,18 +39,14 @@ namespace CTRM
         public int Thu { get; set; }
         public int Fri { get; set; }
         public int Sat { get; set; }
-
-
         public int WeekTotal => Sun + Mon + Tue + Wed + Thu + Fri + Sat;
     }
-    // Row for the Right Grid (Interval Heatmap)
+
     public class ArrivalIntervalRow
     {
         public TimeSpan Time { get; set; }
-        public string CustomLabel { get; set; } // Allows "TOTAL" override
+        public string CustomLabel { get; set; }
         public string Label => !string.IsNullOrEmpty(CustomLabel) ? CustomLabel : Time.ToString(@"hh\:mm");
-
-        // Raw Numeric Values (Stored so we can export them if needed)
         public double SunVal { get; set; }
         public double MonVal { get; set; }
         public double TueVal { get; set; }
@@ -58,11 +54,7 @@ namespace CTRM
         public double ThuVal { get; set; }
         public double FriVal { get; set; }
         public double SatVal { get; set; }
-
-        // Compatibility List: If your Excel receiver needs a list of values
         public List<double> Values => new List<double> { SunVal, MonVal, TueVal, WedVal, ThuVal, FriVal, SatVal };
-
-        // Display Text (e.g., "150" or "12%")
         public string SunDisplay { get; set; } = "";
         public string MonDisplay { get; set; } = "";
         public string TueDisplay { get; set; } = "";
@@ -70,8 +62,6 @@ namespace CTRM
         public string ThuDisplay { get; set; } = "";
         public string FriDisplay { get; set; } = "";
         public string SatDisplay { get; set; } = "";
-
-        // Background Colors (Heatmap)
         public Brush SunColor { get; set; } = Brushes.White;
         public Brush MonColor { get; set; } = Brushes.White;
         public Brush TueColor { get; set; } = Brushes.White;
@@ -89,13 +79,11 @@ namespace CTRM
         public List<IBV_CallData> Load(string filePath)
         {
             var results = new List<IBV_CallData>(10000);
-
             using (var reader = new StreamReader(filePath))
             {
                 string? headerLine = reader.ReadLine();
                 if (string.IsNullOrEmpty(headerLine)) return results;
 
-                // Sanitize header for Excel Filters and Quotes
                 headerLine = headerLine.Replace("\uFEFF", "").Replace("\"", "").Trim();
                 var headers = headerLine.Split(',').Select(h => h.Trim().ToUpper()).ToList();
 
@@ -135,7 +123,6 @@ namespace CTRM
                         string timePart = rawInterval.Split(' ')[1];
                         TimeSpan startTime = TimeSpan.Parse(timePart.Split('-')[0]);
 
-                        // Use double parse for safety with Excel formats
                         int offered = (int)double.Parse(columns[idxOffered]);
                         string team = (idxTeam != -1 && idxTeam < columns.Length) ? columns[idxTeam].Trim() : "Unknown";
 
@@ -179,14 +166,13 @@ namespace CTRM
     // ---------------------------------------------------------
     public partial class Arrival_Pattern : Window
     {
-        private List<IBV_CallData> _allData;
+        // Notice we removed _allData, as we will use DataManager.Instance.AllData
         private List<IBV_CallData> _filteredData;
         private bool _isDataLoading = false;
 
         public Arrival_Pattern()
         {
             InitializeComponent();
-            _allData = new List<IBV_CallData>();
             _filteredData = new List<IBV_CallData>();
         }
 
@@ -201,14 +187,20 @@ namespace CTRM
                 try
                 {
                     var loader = new IBV_Historical_Loader();
-                    _allData = loader.Load(openFileDialog.FileName);
+                    var loadedData = loader.Load(openFileDialog.FileName);
 
-                    if (_allData.Count > 0)
+                    if (loadedData != null && loadedData.Count > 0)
                     {
                         _isDataLoading = true;
 
-                        // 1. Populate SKILLS ListBox
-                        var teams = _allData.Select(x => x.Team).Distinct().OrderBy(t => t).ToList();
+                        // 1. Send Data to the DB DataManager
+                        DataManager.Instance.SetData(loadedData);
+
+                        // Use data from the DataManager for setup
+                        var masterData = DataManager.Instance.AllData;
+
+                        // 2. Populate SKILLS ListBox
+                        var teams = masterData.Select(x => x.Team).Distinct().OrderBy(t => t).ToList();
                         teams.Insert(0, "All");
                         lstTeams.ItemsSource = teams;
                         if (teams.Count > 0)
@@ -217,13 +209,11 @@ namespace CTRM
                             btnSkillSelect.Content = "All Skills Selected";
                         }
 
-                        // 2. NEW: Populate WEEKS ListBox (Multi-Select)
-                        // Convert ints to strings so "All" matches the type
-                        var weeks = _allData.Select(x => x.WeekNumber.ToString()).Distinct().OrderBy(w => w.Length).ThenBy(w => w).ToList();
+                        // 3. Populate WEEKS ListBox
+                        var weeks = masterData.Select(x => x.WeekNumber.ToString()).Distinct().OrderBy(w => w.Length).ThenBy(w => w).ToList();
                         weeks.Insert(0, "All Weeks (Total)");
                         lstWeeks.ItemsSource = weeks;
 
-                        // Default to "All"
                         if (weeks.Count > 0)
                         {
                             lstWeeks.SelectedIndex = 0;
@@ -246,15 +236,10 @@ namespace CTRM
             }
         }
 
-        // ============================================
-        //LEFT-SIDE FILTER METHOD
-        // ============================================
         private void OnFilterChanged(object sender, RoutedEventArgs e)
         {
-            // Prevent crashes if data isn't loaded yet
             if (_isDataLoading) return;
 
-            // Update the "Select Skills" button text if the list was changed
             if (sender == lstTeams)
             {
                 var count = lstTeams.SelectedItems.Count;
@@ -266,20 +251,17 @@ namespace CTRM
                 else
                     btnSkillSelect.Content = count == 1 ? first : $"{count} Skills Selected";
             }
-
-            // Trigger the dashboard refresh
             RefreshDashboard();
         }
-        // --- FILTER & REFRESH HANDLERS ---
+
         private void OnIntervalFilterChanged(object sender, RoutedEventArgs e)
         {
             if (_isDataLoading) return;
 
-            // Update Week Button Text
             if (sender == lstWeeks)
             {
                 var count = lstWeeks.SelectedItems.Count;
-                if (count == 0) return; // Don't update if nothing selected
+                if (count == 0) return;
 
                 var first = lstWeeks.SelectedItems[0].ToString();
                 if (first.Contains("Total"))
@@ -287,29 +269,22 @@ namespace CTRM
                 else
                     btnWeekSelect.Content = count == 1 ? $"Week {first}" : $"{count} Weeks Selected";
             }
-
             GenerateIntervalGrid();
         }
 
-
-
         private void RefreshDashboard()
         {
-            // Safety Check: Ensure data is loaded
-            if (_allData == null || _allData.Count == 0) return;
+            // Connect to DataManager instead of local list
+            var masterData = DataManager.Instance.AllData;
+            if (masterData == null || masterData.Count == 0) return;
 
-            // Get selected items from ListBox
             var selectedItems = lstTeams.SelectedItems.Cast<string>().ToList();
-            if (selectedItems.Count == 0) return; // Nothing selected
+            if (selectedItems.Count == 0) return;
 
-            // FILTER LOGIC:
-            // If "All" is selected, OR if the list is empty, show everything.
-            // Otherwise, filter where the Team is in the selected list.
             if (selectedItems.Contains("All"))
-                _filteredData = _allData;
+                _filteredData = masterData;
             else
-                _filteredData = _allData.Where(x => selectedItems.Contains(x.Team)).ToList();
-
+                _filteredData = masterData.Where(x => selectedItems.Contains(x.Team)).ToList();
 
             var pivotRows = _filteredData
                 .GroupBy(x => new { x.Year, x.WeekNumber })
@@ -330,33 +305,27 @@ namespace CTRM
 
             gridHistory.ItemsSource = pivotRows;
             DrawChart(pivotRows);
-            //Update Right Grid (Intervals)
             GenerateIntervalGrid();
         }
-        // --- RIGHT GRID LOGIC (HEATMAP) ---
+
         private void GenerateIntervalGrid()
         {
-            // Safety Checks
             if (_filteredData == null || _filteredData.Count == 0) return;
             if (lstWeeks.SelectedItems.Count == 0) return;
 
-            // 1. Determine Scope (Multiple Weeks)
             var selectedItems = lstWeeks.SelectedItems.Cast<string>().ToList();
             List<IBV_CallData> scopeData;
 
             if (selectedItems.Contains("All Weeks (Total)"))
             {
-                // Use All Data (Total)
                 scopeData = _filteredData;
             }
             else
             {
-                // Parse "1", "2" -> int, and filter
                 var selectedWeekNums = selectedItems.Select(int.Parse).ToList();
                 scopeData = _filteredData.Where(x => selectedWeekNums.Contains(x.WeekNumber)).ToList();
             }
 
-            // 2. Prepare Matrix
             var intervalRows = new List<ArrivalIntervalRow>();
             double[,] matrix = new double[48, 7];
             double[] daySums = new double[7];
@@ -372,15 +341,11 @@ namespace CTRM
                     DayOfWeek day = (DayOfWeek)d;
                     var matching = scopeData.Where(x => x.StartTime == ts && x.Date.DayOfWeek == day).ToList();
 
-                    // --- CHANGED LOGIC: TOTAL SUM ---
-                    // Previously we divided by distinct weeks for Average. 
-                    // Now we just SUM them to get the Total.
                     double val = matching.Sum(x => x.Offered);
 
                     matrix[i, d] = val;
                     daySums[d] += val;
 
-                    // Populate Object Properties
                     switch (day)
                     {
                         case DayOfWeek.Sunday: newRow.SunVal = val; break;
@@ -394,11 +359,9 @@ namespace CTRM
                 }
             }
 
-            // 3. Colors & Display Strings
             double minVal = double.MaxValue, maxVal = 0;
             bool isPercent = rbPattern.IsChecked == true;
 
-            // Determine Min/Max
             for (int i = 0; i < 48; i++)
             {
                 for (int d = 0; d < 7; d++)
@@ -412,7 +375,6 @@ namespace CTRM
                 }
             }
 
-            // Assign
             for (int i = 0; i < 48; i++)
             {
                 var row = intervalRows[i];
@@ -438,7 +400,6 @@ namespace CTRM
                 }
             }
 
-            // 4. Totals Row
             if (!isPercent)
             {
                 var totalRow = new ArrivalIntervalRow { CustomLabel = "TOTAL" };
@@ -450,7 +411,6 @@ namespace CTRM
                 totalRow.FriDisplay = daySums[5].ToString("N0");
                 totalRow.SatDisplay = daySums[6].ToString("N0");
 
-                // FIX: Assign Numeric Values (Crucial for Excel Export)
                 totalRow.SunVal = daySums[0];
                 totalRow.MonVal = daySums[1];
                 totalRow.TueVal = daySums[2];
@@ -465,43 +425,32 @@ namespace CTRM
 
             gridIntervals.ItemsSource = intervalRows;
         }
+
         private Brush GetHeatmapColor(double value, double min, double max)
         {
-            // Use WhiteSmoke instead of pure White for empty/equal values
             if (max <= min) return new SolidColorBrush(Color.FromRgb(245, 245, 245));
 
-            double t = (value - min) / (max - min); // 0.0 to 1.0
-
-            // --- COMFORT PALETTE ---
-            // Low (Soft Blue):   R=200, G=225, B=255
-            // Mid (White):       R=255, G=255, B=255
-            // High (Soft Red):   R=255, G=215, B=215
-
+            double t = (value - min) / (max - min);
             byte r, g, b;
 
             if (t < 0.5)
             {
-                // Transition: Soft Blue -> White
                 double localT = t * 2;
-
-                // Blend from (200, 225, 255) to (255, 255, 255)
                 r = (byte)(200 + (255 - 200) * localT);
                 g = (byte)(225 + (255 - 225) * localT);
-                b = 255; // Blue stays max
+                b = 255;
             }
             else
             {
-                // Transition: White -> Soft Red
                 double localT = (t - 0.5) * 2;
-
-                // Blend from (255, 255, 255) to (255, 215, 215)
-                r = 255; // Red stays max
-                g = (byte)(255 - (255 - 215) * localT); // Green drops
-                b = (byte)(255 - (255 - 215) * localT); // Blue drops
+                r = 255;
+                g = (byte)(255 - (255 - 215) * localT);
+                b = (byte)(255 - (255 - 215) * localT);
             }
 
             return new SolidColorBrush(Color.FromRgb(r, g, b));
         }
+
         private void OnChartSizeChanged(object sender, SizeChangedEventArgs e)
         {
             if (gridHistory.ItemsSource is List<WeeklyPivotRow> data)
@@ -526,7 +475,6 @@ namespace CTRM
             {
                 foreach (var r in data)
                 {
-                    // FIX: Changed order to start with Sunday and end with Saturday
                     vals.AddRange(new double[] { r.Sun, r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat });
                 }
             }
@@ -574,7 +522,6 @@ namespace CTRM
         // EXPORT LOGIC (EXCEL .XLSX)
         // =========================================================
 
-        // 1. HELPER: Gets comma-separated string of selected items from a ListBox
         private string GetSelectedItemsString(ListBox listBox)
         {
             if (listBox.SelectedItems.Count == 0) return "None";
@@ -583,7 +530,6 @@ namespace CTRM
             return string.Join(", ", items);
         }
 
-        // 2. EXPORT WEEKLY VOLUME TABLE (Left Grid)
         private void ExportWeeks_Click(object sender, RoutedEventArgs e)
         {
             if (gridHistory.ItemsSource is not List<WeeklyPivotRow> data || data.Count == 0)
@@ -592,18 +538,15 @@ namespace CTRM
                 return;
             }
 
-            // Get selected skills for the header
             string skillHeader = $"Skills: {GetSelectedItemsString(lstTeams)}";
 
             SaveToExcel(workbook =>
             {
                 var ws = workbook.Worksheets.Add("Weekly Volume");
 
-                // --- HEADER SECTION ---
                 ws.Cell(1, 1).Value = skillHeader;
                 ws.Range(1, 1, 1, 9).Merge().Style.Font.Bold = true;
 
-                // --- TABLE HEADERS ---
                 int startRow = 3;
                 string[] headers = { "Week", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Total" };
 
@@ -612,13 +555,11 @@ namespace CTRM
                     ws.Cell(startRow, i + 1).Value = headers[i];
                 }
 
-                // Style the header row
                 var headerRange = ws.Range(startRow, 1, startRow, 9);
                 headerRange.Style.Font.Bold = true;
                 headerRange.Style.Fill.BackgroundColor = XLColor.LightGray;
                 headerRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-                // --- DATA ROWS ---
                 for (int i = 0; i < data.Count; i++)
                 {
                     var row = data[i];
@@ -640,7 +581,6 @@ namespace CTRM
             }, "Weekly_Volume_Export");
         }
 
-        // 3. EXPORT INTERVAL DISTRIBUTION TABLE (Right Grid)
         private void ExportIntervals_Click(object sender, RoutedEventArgs e)
         {
             if (gridIntervals.ItemsSource is not List<ArrivalIntervalRow> data || data.Count == 0)
@@ -649,13 +589,10 @@ namespace CTRM
                 return;
             }
 
-            // Metadata Headers
             string skillHeader = $"Skills: {GetSelectedItemsString(lstTeams)}";
             string weekHeader = $"Weeks: {GetSelectedItemsString(lstWeeks)}";
             bool isPercent = rbPattern.IsChecked == true;
 
-            // Calculate Vertical Totals for Percentage Calculation
-            // We sum everything excluding the "TOTAL" row to get the day's full volume
             double totalSun = 0, totalMon = 0, totalTue = 0, totalWed = 0, totalThu = 0, totalFri = 0, totalSat = 0;
             if (isPercent)
             {
@@ -670,8 +607,7 @@ namespace CTRM
             {
                 var ws = workbook.Worksheets.Add("Interval Distribution");
 
-                // --- HEADER SECTION ---
-                int totalCols = isPercent ? 8 : 9; // 8 cols for %, 9 cols for Volume (includes Total)
+                int totalCols = isPercent ? 8 : 9;
 
                 ws.Cell(1, 1).Value = skillHeader;
                 ws.Range(1, 1, 1, totalCols).Merge().Style.Font.Bold = true;
@@ -679,11 +615,9 @@ namespace CTRM
                 ws.Cell(2, 1).Value = weekHeader;
                 ws.Range(2, 1, 2, totalCols).Merge().Style.Font.Bold = true;
 
-                // --- TABLE HEADERS ---
                 int startRow = 4;
                 var headerList = new List<string> { "Interval", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
-                // Only add "Total" column if we are exporting Volumes
                 if (!isPercent) headerList.Add("Total");
 
                 for (int i = 0; i < headerList.Count; i++)
@@ -691,13 +625,11 @@ namespace CTRM
                     ws.Cell(startRow, i + 1).Value = headerList[i];
                 }
 
-                // Style Header
                 var headerRange = ws.Range(startRow, 1, startRow, headerList.Count);
                 headerRange.Style.Font.Bold = true;
                 headerRange.Style.Fill.BackgroundColor = XLColor.LightGray;
                 headerRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-                // --- DATA ROWS ---
                 for (int i = 0; i < data.Count; i++)
                 {
                     var row = data[i];
@@ -705,13 +637,11 @@ namespace CTRM
 
                     ws.Cell(r, 1).Value = row.Label;
 
-                    // Function to write cells with correct formatting
                     void WriteCell(int col, double val, double dayTotal)
                     {
                         var cell = ws.Cell(r, col);
                         if (isPercent)
                         {
-                            // Calculate %: (Volume / Day Total)
                             double pct = dayTotal > 0 ? (val / dayTotal) : 0;
                             cell.Value = pct;
                             cell.Style.NumberFormat.Format = "0.0%";
@@ -731,7 +661,6 @@ namespace CTRM
                     WriteCell(7, row.FriVal, totalFri);
                     WriteCell(8, row.SatVal, totalSat);
 
-                    // If Volume Mode, calculate and write the Horizontal Row Total
                     if (!isPercent)
                     {
                         double rowSum = row.SunVal + row.MonVal + row.TueVal + row.WedVal +
@@ -743,7 +672,6 @@ namespace CTRM
                         cellTotal.Style.Font.Bold = true;
                     }
 
-                    // Style the bottom "TOTAL" row distinctively
                     if (row.Label == "TOTAL")
                     {
                         ws.Row(r).Style.Font.Bold = true;
@@ -756,7 +684,6 @@ namespace CTRM
             }, "Interval_Distribution_Export");
         }
 
-        // 4. HELPER: Save File Dialog Wrapper
         private void SaveToExcel(Action<XLWorkbook> buildWorkbookAction, string defaultName)
         {
             SaveFileDialog dlg = new SaveFileDialog
@@ -784,6 +711,4 @@ namespace CTRM
             }
         }
     }
-
-
 }
