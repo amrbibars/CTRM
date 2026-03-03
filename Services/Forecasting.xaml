@@ -81,6 +81,9 @@
 
                         <Button x:Name="btnCalculate" Content="⚙ Generate Forecast" Height="40" 
                                 FontSize="14" FontWeight="Bold" Cursor="Hand" Click="btnCalculate_Click"/>
+                        <Button x:Name="btnExport" Content="💾 Export to Excel" Height="40" Margin="0,10,0,0"
+                                 FontSize="14" FontWeight="Bold" 
+                                Cursor="Hand" IsEnabled="False" Click="btnExport_Click"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
