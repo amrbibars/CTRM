@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -12,6 +14,12 @@ namespace CTRM.Services
     public partial class Forecasting : Window
     {
         private List<string> _allSkills = new List<string>();
+
+        // Variables to hold the data for the Export function
+        private List<string> _lastSelectedSkills;
+        private DataTable _dtVolumeOutput;
+        private List<ArrivalPatternData> _patternList;
+        private DataTable _dtIntervalOutput;
 
         public Forecasting()
         {
@@ -43,6 +51,7 @@ namespace CTRM.Services
                         DataManager.Instance.SetData(loadedData);
                         MessageBox.Show("Data successfully loaded.", "Load Success", MessageBoxButton.OK, MessageBoxImage.Information);
                         UpdateDataStatus();
+                        btnExport.IsEnabled = false; // Reset export button
                     }
                     else
                     {
@@ -64,11 +73,9 @@ namespace CTRM.Services
                 txtDataStatus.Text = $"Status: Data Loaded ({data.Count:N0} records active)";
                 txtDataStatus.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#27AE60"));
 
-                // Populate Skills List 
                 _allSkills = data.Select(x => x.Team).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
                 lstSkills.ItemsSource = _allSkills;
 
-                // Dynamically Populate Lookup Range
                 int totalWeeksInData = data.Select(x => x.WeekNumber).Distinct().Count();
                 int maxWeeks = Math.Min(12, totalWeeksInData);
                 int minWeeks = Math.Min(3, maxWeeks);
@@ -76,10 +83,7 @@ namespace CTRM.Services
                 cmbLookupRange.Items.Clear();
                 if (maxWeeks > 0)
                 {
-                    for (int i = minWeeks; i <= maxWeeks; i++)
-                    {
-                        cmbLookupRange.Items.Add(i);
-                    }
+                    for (int i = minWeeks; i <= maxWeeks; i++) cmbLookupRange.Items.Add(i);
                     cmbLookupRange.SelectedIndex = cmbLookupRange.Items.Count - 1;
                 }
             }
@@ -97,23 +101,14 @@ namespace CTRM.Services
             if (lstSkills == null) return;
 
             if (string.IsNullOrWhiteSpace(txtSkillSearch.Text))
-            {
                 lstSkills.ItemsSource = _allSkills;
-            }
             else
-            {
-                var filter = txtSkillSearch.Text.ToLower();
-                lstSkills.ItemsSource = _allSkills.Where(s => s.ToLower().Contains(filter)).ToList();
-            }
+                lstSkills.ItemsSource = _allSkills.Where(s => s.ToLower().Contains(txtSkillSearch.Text.ToLower())).ToList();
         }
 
         private void btnCalculate_Click(object sender, RoutedEventArgs e)
         {
-            if (!DataManager.Instance.HasData)
-            {
-                MessageBox.Show("Please load data before forecasting.", "No Data", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            if (!DataManager.Instance.HasData) return;
 
             var selectedSkills = lstSkills.SelectedItems.Cast<string>().ToList();
             if (selectedSkills.Count == 0)
@@ -128,20 +123,22 @@ namespace CTRM.Services
             double recencyLevel = sldRecency.Value;
             bool ignoreTrend = chkIgnoreTrend.IsChecked == true;
 
-            // Parse Exclusions
             List<int> excludedWeeks = new List<int>();
             if (!string.IsNullOrWhiteSpace(txtExclusions.Text))
             {
                 var parts = txtExclusions.Text.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
                 foreach (var part in parts)
-                {
                     if (int.TryParse(part.Trim(), out int w)) excludedWeeks.Add(w);
-                }
             }
 
             try
             {
+                _lastSelectedSkills = selectedSkills;
                 RunForecastEngine(selectedSkills, excludedWeeks, lookupRange, recencyLevel, ignoreTrend);
+
+                // Enable Export once calculations succeed
+                btnExport.IsEnabled = true;
+                MessageBox.Show("Forecast and Interval Distribution calculated successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -149,89 +146,66 @@ namespace CTRM.Services
             }
         }
 
-        /// <summary>
-        /// THE CORE MATH ENGINE
-        /// </summary>
         private void RunForecastEngine(List<string> skills, List<int> excludedWeeks, int range, double recencyLevel, bool ignoreTrend)
         {
-            // 1. Filter Data
             var baseData = DataManager.Instance.AllData
-                .Where(x => skills.Contains(x.Team))
-                .Where(x => !excludedWeeks.Contains(x.WeekNumber))
-                .ToList();
+                .Where(x => skills.Contains(x.Team) && !excludedWeeks.Contains(x.WeekNumber)).ToList();
 
-            if (baseData.Count == 0) throw new Exception("No data available after applying skill and week exclusion filters.");
+            if (baseData.Count == 0) throw new Exception("No data available after applying filters.");
 
-            // 2. Identify Target Weeks (Last N weeks chronologically)
             var targetWeeks = baseData.Select(x => x.WeekNumber).Distinct()
                 .OrderByDescending(w => w).Take(range).OrderBy(w => w).ToList();
 
-            // 3. Aggregate Daily and Weekly Volumes
-            var dailyData = baseData.Where(x => targetWeeks.Contains(x.WeekNumber))
-                .GroupBy(x => x.Date.Date)
+                var dailyData = baseData.Where(x => targetWeeks.Contains(x.WeekNumber))
+                .GroupBy(x => new {
+                    DateOnly = x.Date.Date,
+                    DayOfWeek = x.Date.DayOfWeek,
+                    WeekNum = x.WeekNumber,
+                    Start = x.StartTime
+                })
                 .Select(g => new {
-                    Date = g.Key,
+                    Date = g.Key.DateOnly,
                     DOW = g.Key.DayOfWeek,
-                    WeekNum = g.First().WeekNumber, // Assuming chronological data aligns perfectly
-                    Volume = g.Sum(x => (double)x.Offered)
+                    WeekNum = g.Key.WeekNum,
+                    Interval = g.Key.Start.ToString(@"hh\:mm"),
+                    Volume = g.Sum(c => (double)c.Offered)
                 }).ToList();
 
-            var weeklyVolumes = dailyData.GroupBy(x => x.WeekNum)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Volume));
+            var weeklyVolumes = dailyData.GroupBy(x => x.WeekNum).ToDictionary(g => g.Key, g => g.Sum(x => x.Volume));
+            var dailyVolumes = dailyData.GroupBy(x => x.Date).ToDictionary(g => g.Key, g => g.Sum(x => x.Volume));
 
-            // Calculate Daily Percentages
-            var dailyPercentages = dailyData.Select(d => new {
-                d.Date,
-                d.DOW,
-                d.WeekNum,
-                Pct = weeklyVolumes[d.WeekNum] > 0 ? (d.Volume / weeklyVolumes[d.WeekNum]) : 0
+            // --- STAGE 1: DOW PATTERN ---
+            var dailyPercentages = dailyVolumes.Select(d => new {
+                Date = d.Key,
+                DOW = d.Key.DayOfWeek,
+                WeekNum = dailyData.First(x => x.Date == d.Key).WeekNum,
+                Pct = weeklyVolumes[dailyData.First(x => x.Date == d.Key).WeekNum] > 0 ? (d.Value / weeklyVolumes[dailyData.First(x => x.Date == d.Key).WeekNum]) : 0
             }).ToList();
 
-            // 4. Calculate Normalized Arrival Pattern (Step 1B)
-            DayOfWeek[] daysOfWeek = { DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday };
-            var patternList = new List<ArrivalPatternData>();
+            DayOfWeek[] dowOrder = { DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday };
+            _patternList = new List<ArrivalPatternData>();
             double totalNormalAvg = 0;
 
-            foreach (var day in daysOfWeek)
+            foreach (var day in dowOrder)
             {
                 var dayPcts = dailyPercentages.Where(x => x.DOW == day).Select(x => x.Pct).ToList();
                 double avg = dayPcts.Any() ? dayPcts.Average() : 0;
                 double stdDev = CalculateStandardDeviation(dayPcts);
-                double ll = avg - stdDev;
-                double ul = avg + stdDev;
+                double ll = avg - stdDev; double ul = avg + stdDev;
 
-                // Filter to Normalized Range
                 var normalPcts = dayPcts.Where(p => p >= ll && p <= ul).ToList();
-                double normalAvg = normalPcts.Any() ? normalPcts.Average() : avg; // fallback to avg if none fall in range
-
+                double normalAvg = normalPcts.Any() ? normalPcts.Average() : avg;
                 totalNormalAvg += normalAvg;
 
-                patternList.Add(new ArrivalPatternData
-                {
-                    DOW = day.ToString(),
-                    Average = avg,
-                    StdDev = stdDev,
-                    LowerLimit = ll,
-                    UpperLimit = ul,
-                    NormalAverage = normalAvg
-                });
+                _patternList.Add(new ArrivalPatternData { DOW = day.ToString(), Average = avg, StdDev = stdDev, LowerLimit = ll, UpperLimit = ul, NormalAverage = normalAvg });
             }
 
-            // Rescale Normal Averages to exactly 100%
-            foreach (var p in patternList)
-            {
-                p.NormalAverage = totalNormalAvg > 0 ? (p.NormalAverage / totalNormalAvg) : (1.0 / 7.0);
-            }
+            foreach (var p in _patternList) p.NormalAverage = totalNormalAvg > 0 ? (p.NormalAverage / totalNormalAvg) : (1.0 / 7.0);
 
-            // 5. Calculate Weighted Average Forecast
             double[] weights = GetDynamicWeights(targetWeeks.Count, recencyLevel);
             double weightedForecast = 0;
-            for (int i = 0; i < targetWeeks.Count; i++)
-            {
-                weightedForecast += weeklyVolumes[targetWeeks[i]] * weights[i];
-            }
+            for (int i = 0; i < targetWeeks.Count; i++) weightedForecast += weeklyVolumes[targetWeeks[i]] * weights[i];
 
-            // 6. Calculate Trend Forecast
             double trendForecast = 0;
             if (!ignoreTrend && targetWeeks.Count > 1)
             {
@@ -242,82 +216,167 @@ namespace CTRM.Services
                     double curr = weeklyVolumes[targetWeeks[i]];
                     if (prev > 0) ratios.Add(curr / prev);
                 }
-
                 double avgTrend = ratios.Any() ? ratios.Average() : 1.0;
                 trendForecast = weeklyVolumes[targetWeeks.Last()] * avgTrend;
             }
 
-            // 7. Final Volume Calculation
-            double finalWeeklyVolume = ignoreTrend || targetWeeks.Count <= 1
-                ? weightedForecast
-                : (weightedForecast + trendForecast) / 2.0;
+            double finalWeeklyVolume = ignoreTrend || targetWeeks.Count <= 1 ? weightedForecast : (weightedForecast + trendForecast) / 2.0;
 
-            // 8. Bind to Grids
-            RenderOutputGrids(targetWeeks, weeklyVolumes, dailyData, patternList, finalWeeklyVolume, daysOfWeek);
-        }
+            // --- STAGE 2: INTERVAL NORMALIZATION ---
+            var intervalPcts = dailyData.Select(x => new {
+                x.Date,
+                x.DOW,
+                x.Interval,
+                Pct = dailyVolumes[x.Date] > 0 ? x.Volume / dailyVolumes[x.Date] : 0
+            }).ToList();
 
-        private void RenderOutputGrids(List<int> weeks, Dictionary<int, double> weeklyVols, dynamic dailyData, List<ArrivalPatternData> patternList, double finalWeeklyVol, DayOfWeek[] dowOrder)
-        {
-            DataTable dtVolume = new DataTable();
-            dtVolume.Columns.Add("Period", typeof(string));
+            var intervalStats = intervalPcts.GroupBy(x => new { x.DOW, x.Interval })
+                .Select(g => {
+                    double iAvg = g.Average(x => x.Pct);
+                    double iStd = CalculateStandardDeviation(g.Select(x => x.Pct).ToList());
+                    double iLl = iAvg - iStd; double iUl = iAvg + iStd;
+                    var normalValues = g.Where(x => x.Pct >= iLl && x.Pct <= iUl).Select(x => x.Pct).ToList();
+                    return new { g.Key.DOW, g.Key.Interval, NormalAvg = normalValues.Any() ? normalValues.Average() : iAvg };
+                }).ToList();
 
-            foreach (var day in dowOrder) dtVolume.Columns.Add(day.ToString(), typeof(int));
-            dtVolume.Columns.Add("Total", typeof(int));
+            var dowIntervalSums = intervalStats.GroupBy(x => x.DOW).ToDictionary(g => g.Key, g => g.Sum(x => x.NormalAvg));
 
-            // Add Actuals Rows
-            foreach (var week in weeks)
+            // Generate Top Grid (Daily Volume)
+            _dtVolumeOutput = new DataTable();
+            _dtVolumeOutput.Columns.Add("Period", typeof(string));
+            foreach (var day in dowOrder) _dtVolumeOutput.Columns.Add(day.ToString(), typeof(int));
+            _dtVolumeOutput.Columns.Add("Total", typeof(int));
+
+            foreach (var week in targetWeeks)
             {
-                DataRow row = dtVolume.NewRow();
+                DataRow row = _dtVolumeOutput.NewRow();
                 row["Period"] = $"Week {week} Actual";
-
-                foreach (var day in dowOrder)
-                {
-                    // Find the volume for this specific day in this specific week
-                    var dayVol = ((IEnumerable<dynamic>)dailyData)
-                                 .FirstOrDefault(x => x.WeekNum == week && x.DOW == day)?.Volume ?? 0;
-                    row[day.ToString()] = (int)Math.Round(dayVol);
-                }
-                row["Total"] = (int)Math.Round(weeklyVols[week]);
-                dtVolume.Rows.Add(row);
+                foreach (var day in dowOrder) row[day.ToString()] = (int)Math.Round(dailyVolumes.Where(x => x.Key.DayOfWeek == day && dailyData.Any(d => d.Date == x.Key && d.WeekNum == week)).Sum(x => x.Value));
+                row["Total"] = (int)Math.Round(weeklyVolumes[week]);
+                _dtVolumeOutput.Rows.Add(row);
             }
 
-            // Add Forecast Row
-            DataRow forecastRow = dtVolume.NewRow();
+            DataRow forecastRow = _dtVolumeOutput.NewRow();
             forecastRow["Period"] = "Forecasted Volume";
             int forecastTotal = 0;
+            Dictionary<string, int> forecastedDailyVols = new Dictionary<string, int>();
 
             foreach (var day in dowOrder)
             {
-                double dayPct = patternList.First(p => p.DOW == day.ToString()).NormalAverage;
-                int dayForecast = (int)Math.Round(finalWeeklyVol * dayPct);
+                int dayForecast = (int)Math.Round(finalWeeklyVolume * _patternList.First(p => p.DOW == day.ToString()).NormalAverage);
                 forecastRow[day.ToString()] = dayForecast;
+                forecastedDailyVols[day.ToString()] = dayForecast;
                 forecastTotal += dayForecast;
             }
             forecastRow["Total"] = forecastTotal;
-            dtVolume.Rows.Add(forecastRow);
+            _dtVolumeOutput.Rows.Add(forecastRow);
 
-            dgVolumeOutput.ItemsSource = dtVolume.DefaultView;
-            dgPatternOutput.ItemsSource = patternList;
+            // Generate Interval Grid (Hidden in UI, Ready for Export)
+            _dtIntervalOutput = new DataTable();
+            _dtIntervalOutput.Columns.Add("Interval", typeof(string));
+            foreach (var day in dowOrder) _dtIntervalOutput.Columns.Add(day.ToString(), typeof(int));
+            _dtIntervalOutput.Columns.Add("Total", typeof(int));
+
+            List<string> timeSlots = GenerateTimeSlots();
+            foreach (var time in timeSlots)
+            {
+                DataRow row = _dtIntervalOutput.NewRow();
+                row["Interval"] = time;
+                int rowTotal = 0;
+
+                foreach (var day in dowOrder)
+                {
+                    var stat = intervalStats.FirstOrDefault(x => x.DOW == day && x.Interval == time);
+                    double finalPct = stat != null && dowIntervalSums[day] > 0 ? (stat.NormalAvg / dowIntervalSums[day]) : 0;
+
+                    int intVol = (int)Math.Round(forecastedDailyVols[day.ToString()] * finalPct);
+                    row[day.ToString()] = intVol;
+                    rowTotal += intVol;
+                }
+                row["Total"] = rowTotal;
+                _dtIntervalOutput.Rows.Add(row);
+            }
+
+            // Bind to UI
+            dgVolumeOutput.ItemsSource = _dtVolumeOutput.DefaultView;
+            dgPatternOutput.ItemsSource = _patternList;
+            dgIntervalOutput.ItemsSource = _dtIntervalOutput.DefaultView;
         }
 
-        /// <summary>
-        /// Exponential weight generator based on Slider (-5 to +5).
-        /// Mathematically smooths the weights so they always equal 100%.
-        /// </summary>
+        private void btnExport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_dtVolumeOutput == null || _dtIntervalOutput == null || _patternList == null) return;
+
+            SaveFileDialog saveDialog = new SaveFileDialog
+            {
+                Filter = "Excel CSV (*.csv)|*.csv",
+                FileName = $"Forecast_Export_{DateTime.Now:yyyyMMdd_HHmm}.csv",
+                Title = "Export Forecast to Excel"
+            };
+
+            if (saveDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    StringBuilder sb = new StringBuilder();
+
+                    // 1. SKILLS
+                    sb.AppendLine("--- SELECTED SKILLS ---");
+                    sb.AppendLine(string.Join(" | ", _lastSelectedSkills));
+                    sb.AppendLine();
+
+                    // 2. DAILY & WEEKLY VOLUME
+                    sb.AppendLine("--- DAILY & WEEKLY VOLUME FORECAST ---");
+                    sb.AppendLine(string.Join(",", _dtVolumeOutput.Columns.Cast<DataColumn>().Select(c => c.ColumnName)));
+                    foreach (DataRow row in _dtVolumeOutput.Rows)
+                        sb.AppendLine(string.Join(",", row.ItemArray));
+                    sb.AppendLine();
+
+                    // 3. DOW ARRIVAL PATTERN
+                    sb.AppendLine("--- NORMALIZED ARRIVAL PATTERN ---");
+                    sb.AppendLine("DOW,Average %,Std Dev %,Lower Limit %,Upper Limit %,Normal Avg %");
+                    foreach (var p in _patternList)
+                        sb.AppendLine($"{p.DOW},{p.Average:P2},{p.StdDev:P2},{p.LowerLimit:P2},{p.UpperLimit:P2},{p.NormalAverage:P2}");
+                    sb.AppendLine();
+
+                    // 4. INTERVALS
+                    sb.AppendLine("--- INTERVAL FORECAST ---");
+                    sb.AppendLine(string.Join(",", _dtIntervalOutput.Columns.Cast<DataColumn>().Select(c => c.ColumnName)));
+                    foreach (DataRow row in _dtIntervalOutput.Rows)
+                        sb.AppendLine(string.Join(",", row.ItemArray));
+
+                    File.WriteAllText(saveDialog.FileName, sb.ToString());
+                    MessageBox.Show("Export complete! You can open this file directly in Excel.", "Export Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error saving file: " + ex.Message, "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private List<string> GenerateTimeSlots()
+        {
+            var slots = new List<string>();
+            for (int h = 0; h < 24; h++)
+            {
+                slots.Add($"{h:D2}:00");
+                slots.Add($"{h:D2}:30");
+            }
+            return slots;
+        }
+
         private double[] GetDynamicWeights(int count, double sliderValue)
         {
             if (count == 0) return new double[0];
             if (count == 1) return new double[] { 1.0 };
 
             double[] weights = new double[count];
-
-            // Bias maps the -5 to +5 slider to a curve exponent (-0.3 to 0.7)
-            double bias = 0.2; // Natural bias (mimics 40/40/20)
+            double bias = 0.2;
             double effectiveBias = bias + (sliderValue / 10.0);
 
             for (int i = 0; i < count; i++)
             {
-                // Normalize index: -1 (Oldest Week) to +1 (Newest Week)
                 double pos = (2.0 * i / (count - 1)) - 1.0;
                 weights[i] = Math.Exp(effectiveBias * 3.0 * pos);
             }
@@ -332,8 +391,7 @@ namespace CTRM.Services
         {
             if (values.Count <= 1) return 0;
             double avg = values.Average();
-            double sumOfSquares = values.Sum(val => Math.Pow(val - avg, 2));
-            return Math.Sqrt(sumOfSquares / (values.Count - 1));
+            return Math.Sqrt(values.Sum(val => Math.Pow(val - avg, 2)) / (values.Count - 1));
         }
 
         public class ArrivalPatternData

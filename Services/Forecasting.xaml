@@ -122,10 +122,13 @@
                 </Border>
             </Grid>
 
-            <Grid Grid.Column="4" Margin="0,0,0,0">
-                <Rectangle StrokeThickness="2" StrokeDashArray="4 4" RadiusX="8" RadiusY="8"/>
-                <TextBlock Text="[ Reserved for Stage 2: Interval Distribution ]" HorizontalAlignment="Center" VerticalAlignment="Center" FontStyle="Italic" TextWrapping="Wrap" TextAlignment="Center" Margin="20"/>
-            </Grid>
+            <Border Grid.Column="4" CornerRadius="8" Padding="10" BorderThickness="1" Background="White" BorderBrush="#DCDDE1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Interval Volume Distribution" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <DataGrid x:Name="dgIntervalOutput" AutoGenerateColumns="True" CanUserAddRows="False" IsReadOnly="True" 
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9"/>
+                </DockPanel>
+            </Border>
         </Grid>
     </Grid>
 </Window>
